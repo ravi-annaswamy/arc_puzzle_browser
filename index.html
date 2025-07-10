@@ -20,8 +20,7 @@
 
         // --- Constants ---
         const COLORS = ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00', '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'];
-        const GITHUB_REPO_URL = 'https://api.github.com/repos/fchollet/ARC-AGI/contents/data/';
-
+        
         // --- UI Components ---
 
         const Grid = React.memo(({ grid, cellSize = 15, title }) => {
@@ -90,56 +89,52 @@
         function PuzzleBrowser() {
             const { useState, useEffect, useCallback } = React;
 
-            const [selectedSet, setSelectedSet] = useState('training'); // 'training' or 'evaluation'
+            const [selectedRepo, setSelectedRepo] = useState('fchollet/ARC-AGI');
+            const [selectedSet, setSelectedSet] = useState('training');
             const [task, setTask] = useState(null);
             const [taskFiles, setTaskFiles] = useState([]);
             const [currentTaskName, setCurrentTaskName] = useState('');
             const [error, setError] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
 
-            // Re-fetch the list of files whenever the selectedSet changes
             useEffect(() => {
                 const fetchTaskFiles = async () => {
                     setIsLoading(true);
                     setError(null);
-                    setTask(null); // Clear previous task
+                    setTask(null);
                     setCurrentTaskName('');
                     
-                    const url = `${GITHUB_REPO_URL}${selectedSet}/`;
+                    const url = `https://api.github.com/repos/${selectedRepo}/contents/data/${selectedSet}/`;
+                    
                     try {
                         const listResponse = await fetch(url);
-                        if (!listResponse.ok) {
-                            throw new Error(`GitHub API error: ${listResponse.status}`);
-                        }
+                        if (!listResponse.ok) throw new Error(`Repo or set not found (${listResponse.status})`);
+                        
                         const data = await listResponse.json();
-                        const files = data
-                            .map(item => item.name)
-                            .filter(name => name.endsWith('.json'));
+                        if (!Array.isArray(data)) throw new Error(`Could not find a valid file list.`);
+                        
+                        const files = data.map(item => item.name).filter(name => name.endsWith('.json'));
                         setTaskFiles(files);
                     } catch (e) {
-                        setError(`Could not load puzzle list for '${selectedSet}'.`);
-                        setTaskFiles([]); // Clear file list on error
+                        setError(`Could not load puzzles from ${selectedRepo}/${selectedSet}.`);
+                        setTaskFiles([]);
                         console.error(e);
                     }
                 };
                 fetchTaskFiles();
-            }, [selectedSet]);
+            }, [selectedRepo, selectedSet]);
             
-            // Load a random puzzle once the file list is available
             useEffect(() => {
                 if (taskFiles.length > 0) {
                     loadRandomPuzzle();
                 } else {
-                  // If taskFiles is empty after loading, we're done loading.
                   setIsLoading(false);
                 }
             }, [taskFiles]); 
 
 
             const loadRandomPuzzle = useCallback(async () => {
-                if (taskFiles.length === 0) {
-                    return; // Don't try to load if there are no files
-                }
+                if (taskFiles.length === 0) return;
                 
                 setIsLoading(true);
                 setError(null);
@@ -147,24 +142,21 @@
                 const randomFileName = taskFiles[Math.floor(Math.random() * taskFiles.length)];
 
                 try {
-                    const url = `${GITHUB_REPO_URL}${selectedSet}/${randomFileName}`;
-                    const response = await fetch(url, {
-                        headers: { Accept: 'application/vnd.github.v3.raw' }
-                    });
-                    if (!response.ok) {
-                        throw new Error(`HTTP error ${response.status} fetching ${randomFileName}`);
-                    }
+                    const url = `https://api.github.com/repos/${selectedRepo}/contents/data/${selectedSet}/${randomFileName}`;
+                    const response = await fetch(url, { headers: { Accept: 'application/vnd.github.v3.raw' } });
+                    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+                    
                     const data = await response.json();
                     setTask(data);
                     setCurrentTaskName(randomFileName);
                 } catch (error) {
                     console.error("Failed to load task:", error);
-                    setError(`Failed to load task '${randomFileName}'. Please try again.`);
+                    setError(`Failed to load task '${randomFileName}'.`);
                     setTask(null);
                 } finally {
                     setIsLoading(false);
                 }
-            }, [taskFiles, selectedSet]);
+            }, [taskFiles, selectedRepo, selectedSet]);
 
             return (
                 <div className="bg-gray-900 text-white min-h-screen font-sans p-4 sm:p-6 lg:p-8">
@@ -174,16 +166,27 @@
                                 ARC Puzzle Browser
                             </h1>
                              <p className="text-gray-400 mt-2">
-                                {currentTaskName ? `Viewing: ${currentTaskName}` : 'Select a puzzle set to begin.'}
+                                {currentTaskName ? `Viewing: ${currentTaskName}` : 'Select a repository and set to begin.'}
                             </p>
                         </div>
 
-                        {/* --- Controls --- */}
                         <div className="bg-gray-900/50 backdrop-blur-sm p-4 rounded-lg shadow-xl flex flex-wrap items-center justify-center gap-4 sticky top-4 z-10">
-                            <div className="flex items-center gap-2">
-                                <label htmlFor="puzzle-set" className="text-sm font-medium">Set:</label>
+                             <div className="flex items-center gap-2">
+                                <label htmlFor="repo-select" className="text-sm font-medium">Repository:</label>
                                 <select 
-                                    id="puzzle-set"
+                                    id="repo-select"
+                                    value={selectedRepo}
+                                    onChange={(e) => setSelectedRepo(e.target.value)}
+                                    className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="fchollet/ARC-AGI">ARC AGI-1</option>
+                                    <option value="arcprize/ARC-AGI-2">ARC AGI-2</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="set-select" className="text-sm font-medium">Set:</label>
+                                <select 
+                                    id="set-select"
                                     value={selectedSet}
                                     onChange={(e) => setSelectedSet(e.target.value)}
                                     className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
@@ -193,7 +196,7 @@
                                 </select>
                             </div>
                             
-                            <div className="h-8 border-l border-gray-600"></div>
+                            <div className="h-8 border-l border-gray-600 hidden sm:block"></div>
 
                             <button 
                                 onClick={loadRandomPuzzle} 
@@ -212,13 +215,12 @@
                         )}
 
                         <div className="mt-8">
-                            {isLoading && !task ? (
+                            {isLoading && (
                                 <div className="text-center text-gray-500 py-20">
-                                    <p>Loading puzzles from '{selectedSet}' set...</p>
+                                    <p>Loading puzzles from {selectedRepo}/{selectedSet}...</p>
                                 </div>
-                            ) : (
-                                <TaskView task={task} />
                             )}
+                            {!isLoading && task && <TaskView task={task} />}
                             {!isLoading && !task && !error && (
                                <div className="text-center text-gray-500 py-20">
                                     <p>Click "Load Random Puzzle" to start.</p>
