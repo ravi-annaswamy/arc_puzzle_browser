@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,13 +20,10 @@
 
         // --- Constants ---
         const COLORS = ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00', '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'];
-        const GITHUB_API_BASE_URL = 'https://api.github.com/repos/fchollet/ARC-AGI/contents/data/training/';
+        const GITHUB_REPO_URL = 'https://api.github.com/repos/fchollet/ARC-AGI/contents/data/';
 
         // --- UI Components ---
 
-        /**
-         * Renders a single ARC grid.
-         */
         const Grid = React.memo(({ grid, cellSize = 15, title }) => {
             if (!grid || grid.length === 0 || grid[0].length === 0) {
                 return <div className="text-xs text-gray-500">{title} (empty)</div>;
@@ -57,9 +53,6 @@
             );
         });
 
-        /**
-         * Displays the train/test pairs for a given task.
-         */
         const TaskView = ({ task }) => {
             if (!task) return null;
             return (
@@ -92,23 +85,29 @@
             );
         };
 
-
         // --- Main App Component ---
 
         function PuzzleBrowser() {
             const { useState, useEffect, useCallback } = React;
 
+            const [selectedSet, setSelectedSet] = useState('training'); // 'training' or 'evaluation'
             const [task, setTask] = useState(null);
             const [taskFiles, setTaskFiles] = useState([]);
             const [currentTaskName, setCurrentTaskName] = useState('');
             const [error, setError] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
 
+            // Re-fetch the list of files whenever the selectedSet changes
             useEffect(() => {
                 const fetchTaskFiles = async () => {
                     setIsLoading(true);
+                    setError(null);
+                    setTask(null); // Clear previous task
+                    setCurrentTaskName('');
+                    
+                    const url = `${GITHUB_REPO_URL}${selectedSet}/`;
                     try {
-                        const listResponse = await fetch(GITHUB_API_BASE_URL);
+                        const listResponse = await fetch(url);
                         if (!listResponse.ok) {
                             throw new Error(`GitHub API error: ${listResponse.status}`);
                         }
@@ -118,24 +117,28 @@
                             .filter(name => name.endsWith('.json'));
                         setTaskFiles(files);
                     } catch (e) {
-                        setError('Could not load puzzle list from GitHub. Please refresh the page.');
+                        setError(`Could not load puzzle list for '${selectedSet}'.`);
+                        setTaskFiles([]); // Clear file list on error
                         console.error(e);
                     }
                 };
                 fetchTaskFiles();
-            }, []);
+            }, [selectedSet]);
             
+            // Load a random puzzle once the file list is available
             useEffect(() => {
                 if (taskFiles.length > 0) {
                     loadRandomPuzzle();
+                } else {
+                  // If taskFiles is empty after loading, we're done loading.
+                  setIsLoading(false);
                 }
             }, [taskFiles]); 
 
 
             const loadRandomPuzzle = useCallback(async () => {
                 if (taskFiles.length === 0) {
-                    setError("Puzzle list is not available.");
-                    return;
+                    return; // Don't try to load if there are no files
                 }
                 
                 setIsLoading(true);
@@ -144,12 +147,12 @@
                 const randomFileName = taskFiles[Math.floor(Math.random() * taskFiles.length)];
 
                 try {
-                    const url = `${GITHUB_API_BASE_URL}${randomFileName}`;
+                    const url = `${GITHUB_REPO_URL}${selectedSet}/${randomFileName}`;
                     const response = await fetch(url, {
                         headers: { Accept: 'application/vnd.github.v3.raw' }
                     });
                     if (!response.ok) {
-                        throw new Error(`HTTP error ${response.status} while fetching ${randomFileName}`);
+                        throw new Error(`HTTP error ${response.status} fetching ${randomFileName}`);
                     }
                     const data = await response.json();
                     setTask(data);
@@ -161,7 +164,7 @@
                 } finally {
                     setIsLoading(false);
                 }
-            }, [taskFiles]);
+            }, [taskFiles, selectedSet]);
 
             return (
                 <div className="bg-gray-900 text-white min-h-screen font-sans p-4 sm:p-6 lg:p-8">
@@ -171,15 +174,31 @@
                                 ARC Puzzle Browser
                             </h1>
                              <p className="text-gray-400 mt-2">
-                                Currently viewing: <span className="font-mono text-gray-300">{currentTaskName || '...'}</span>
+                                {currentTaskName ? `Viewing: ${currentTaskName}` : 'Select a puzzle set to begin.'}
                             </p>
                         </div>
 
-                        <div className="bg-gray-900/50 backdrop-blur-sm p-4 rounded-lg shadow-xl flex items-center justify-center gap-4 sticky top-4 z-10">
+                        {/* --- Controls --- */}
+                        <div className="bg-gray-900/50 backdrop-blur-sm p-4 rounded-lg shadow-xl flex flex-wrap items-center justify-center gap-4 sticky top-4 z-10">
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="puzzle-set" className="text-sm font-medium">Set:</label>
+                                <select 
+                                    id="puzzle-set"
+                                    value={selectedSet}
+                                    onChange={(e) => setSelectedSet(e.target.value)}
+                                    className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="training">Training</option>
+                                    <option value="evaluation">Evaluation</option>
+                                </select>
+                            </div>
+                            
+                            <div className="h-8 border-l border-gray-600"></div>
+
                             <button 
                                 onClick={loadRandomPuzzle} 
                                 disabled={isLoading || taskFiles.length === 0} 
-                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-md transition-transform transform hover:scale-105"
+                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition-transform transform hover:scale-105"
                             >
                                 {isLoading ? 'Loading...' : 'Load Random Puzzle'}
                             </button>
@@ -195,10 +214,15 @@
                         <div className="mt-8">
                             {isLoading && !task ? (
                                 <div className="text-center text-gray-500 py-20">
-                                    <p>Loading initial puzzle...</p>
+                                    <p>Loading puzzles from '{selectedSet}' set...</p>
                                 </div>
                             ) : (
                                 <TaskView task={task} />
+                            )}
+                            {!isLoading && !task && !error && (
+                               <div className="text-center text-gray-500 py-20">
+                                    <p>Click "Load Random Puzzle" to start.</p>
+                                </div>
                             )}
                         </div>
                     </div>
