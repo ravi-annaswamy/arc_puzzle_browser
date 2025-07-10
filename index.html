@@ -1,0 +1,214 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARC Puzzle Browser</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+</head>
+<body class="bg-gray-900">
+    <div id="root"></div>
+    
+    <script type="text/babel">
+
+        // --- Constants ---
+        const COLORS = ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00', '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'];
+        const GITHUB_API_BASE_URL = 'https://api.github.com/repos/fchollet/ARC-AGI/contents/data/training/';
+
+        // --- UI Components ---
+
+        /**
+         * Renders a single ARC grid.
+         */
+        const Grid = React.memo(({ grid, cellSize = 15, title }) => {
+            if (!grid || grid.length === 0 || grid[0].length === 0) {
+                return <div className="text-xs text-gray-500">{title} (empty)</div>;
+            }
+            return (
+                <div className="flex flex-col items-center space-y-2">
+                    {title && <p className="text-sm font-medium text-gray-400">{title}</p>}
+                    <div className="bg-gray-700 p-1 rounded-md shadow-inner">
+                        <div
+                            className="grid"
+                            style={{
+                                gridTemplateColumns: `repeat(${grid[0]?.length || 0}, ${cellSize}px)`,
+                                gridTemplateRows: `repeat(${grid.length}, ${cellSize}px)`,
+                                gap: '1px'
+                            }}
+                        >
+                            {grid.flat().map((cell, i) => (
+                                <div
+                                    key={i}
+                                    className="w-full h-full"
+                                    style={{ backgroundColor: COLORS[cell] || '#FFFFFF' }}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        });
+
+        /**
+         * Displays the train/test pairs for a given task.
+         */
+        const TaskView = ({ task }) => {
+            if (!task) return null;
+            return (
+                <div className="space-y-8">
+                    <div>
+                        <h3 className="text-lg font-semibold text-white mb-4 text-center">Training Pairs</h3>
+                        <div className="flex flex-wrap justify-center gap-6">
+                            {task.train.map((pair, i) => (
+                                <div key={i} className="flex items-center justify-center gap-4 bg-gray-800 p-4 rounded-lg shadow-lg">
+                                    <Grid grid={pair.input} title={`Train ${i} Input`} />
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                                    <Grid grid={pair.output} title={`Train ${i} Output`} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-white mb-4 text-center">Test Pair</h3>
+                        <div className="flex flex-wrap justify-center gap-6">
+                            {task.test.map((pair, i) => (
+                                <div key={i} className="flex items-center justify-center gap-4 bg-gray-800 p-4 rounded-lg shadow-lg">
+                                    <Grid grid={pair.input} title={`Test ${i} Input`} />
+                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                                    <Grid grid={pair.output} title={`Test ${i} Output`} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
+        // --- Main App Component ---
+
+        function PuzzleBrowser() {
+            const { useState, useEffect, useCallback } = React;
+
+            const [task, setTask] = useState(null);
+            const [taskFiles, setTaskFiles] = useState([]);
+            const [currentTaskName, setCurrentTaskName] = useState('');
+            const [error, setError] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+
+            useEffect(() => {
+                const fetchTaskFiles = async () => {
+                    setIsLoading(true);
+                    try {
+                        const listResponse = await fetch(GITHUB_API_BASE_URL);
+                        if (!listResponse.ok) {
+                            throw new Error(`GitHub API error: ${listResponse.status}`);
+                        }
+                        const data = await listResponse.json();
+                        const files = data
+                            .map(item => item.name)
+                            .filter(name => name.endsWith('.json'));
+                        setTaskFiles(files);
+                    } catch (e) {
+                        setError('Could not load puzzle list from GitHub. Please refresh the page.');
+                        console.error(e);
+                    }
+                };
+                fetchTaskFiles();
+            }, []);
+            
+            useEffect(() => {
+                if (taskFiles.length > 0) {
+                    loadRandomPuzzle();
+                }
+            }, [taskFiles]); 
+
+
+            const loadRandomPuzzle = useCallback(async () => {
+                if (taskFiles.length === 0) {
+                    setError("Puzzle list is not available.");
+                    return;
+                }
+                
+                setIsLoading(true);
+                setError(null);
+                
+                const randomFileName = taskFiles[Math.floor(Math.random() * taskFiles.length)];
+
+                try {
+                    const url = `${GITHUB_API_BASE_URL}${randomFileName}`;
+                    const response = await fetch(url, {
+                        headers: { Accept: 'application/vnd.github.v3.raw' }
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status} while fetching ${randomFileName}`);
+                    }
+                    const data = await response.json();
+                    setTask(data);
+                    setCurrentTaskName(randomFileName);
+                } catch (error) {
+                    console.error("Failed to load task:", error);
+                    setError(`Failed to load task '${randomFileName}'. Please try again.`);
+                    setTask(null);
+                } finally {
+                    setIsLoading(false);
+                }
+            }, [taskFiles]);
+
+            return (
+                <div className="bg-gray-900 text-white min-h-screen font-sans p-4 sm:p-6 lg:p-8">
+                    <div className="max-w-7xl mx-auto">
+                        <div className="text-center mb-6">
+                            <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+                                ARC Puzzle Browser
+                            </h1>
+                             <p className="text-gray-400 mt-2">
+                                Currently viewing: <span className="font-mono text-gray-300">{currentTaskName || '...'}</span>
+                            </p>
+                        </div>
+
+                        <div className="bg-gray-900/50 backdrop-blur-sm p-4 rounded-lg shadow-xl flex items-center justify-center gap-4 sticky top-4 z-10">
+                            <button 
+                                onClick={loadRandomPuzzle} 
+                                disabled={isLoading || taskFiles.length === 0} 
+                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-md transition-transform transform hover:scale-105"
+                            >
+                                {isLoading ? 'Loading...' : 'Load Random Puzzle'}
+                            </button>
+                        </div>
+                        
+                        {error && (
+                            <div className="mt-4 bg-red-800/50 border border-red-600 text-red-200 px-4 py-3 rounded-lg text-center" role="alert">
+                                <strong className="font-bold">Error: </strong>
+                                <span className="block sm:inline">{error}</span>
+                            </div>
+                        )}
+
+                        <div className="mt-8">
+                            {isLoading && !task ? (
+                                <div className="text-center text-gray-500 py-20">
+                                    <p>Loading initial puzzle...</p>
+                                </div>
+                            ) : (
+                                <TaskView task={task} />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // 6. Tell React to render your main component in the 'root' div
+        ReactDOM.render(<PuzzleBrowser />, document.getElementById('root'));
+
+    </script>
+</body>
+</html>
