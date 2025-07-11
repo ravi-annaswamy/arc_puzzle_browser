@@ -69,13 +69,12 @@
                         </div>
                     </div>
                     <div>
-                        <h3 className="text-lg font-semibold text-white mb-4 text-center">Test Pair</h3>
+                        <h3 className="text-lg font-semibold text-white mb-4 text-center">Test Input (Output Hidden)</h3>
                         <div className="flex flex-wrap justify-center gap-6">
                             {task.test.map((pair, i) => (
                                 <div key={i} className="flex items-center justify-center gap-4 bg-gray-800 p-4 rounded-lg shadow-lg">
+                                    {/* The output grid and arrow are now removed */}
                                     <Grid grid={pair.input} title={`Test ${i} Input`} />
-                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-                                    <Grid grid={pair.output} title={`Test ${i} Output`} />
                                 </div>
                             ))}
                         </div>
