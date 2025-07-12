@@ -21,6 +21,12 @@
         // --- Constants ---
         const COLORS = ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00', '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'];
         
+        // --- Helper Functions ---
+        const formatGridToString = (grid) => {
+            if (!grid || grid.length === 0) return '';
+            return grid.map(row => row.join(' ')).join('\n');
+        };
+
         // --- UI Components ---
 
         const Grid = React.memo(({ grid, cellSize = 15, title }) => {
@@ -73,7 +79,6 @@
                         <div className="flex flex-wrap justify-center gap-6">
                             {task.test.map((pair, i) => (
                                 <div key={i} className="flex items-center justify-center gap-4 bg-gray-800 p-4 rounded-lg shadow-lg">
-                                    {/* The output grid and arrow are now removed */}
                                     <Grid grid={pair.input} title={`Test ${i} Input`} />
                                 </div>
                             ))}
@@ -83,6 +88,60 @@
             );
         };
 
+        const TextPromptView = ({ task, repo, set, filename }) => {
+            const { useState, useMemo } = React;
+            const [copyText, setCopyText] = useState('Copy');
+
+            const promptText = useMemo(() => {
+                if (!task) return '';
+                
+                let text = `Reference: ${repo}/data/${set}/${filename}\n\n`;
+                text += "Find the common rule that maps an input grid to an output grid, given the examples below.\n\n";
+
+                task.train.forEach((pair, index) => {
+                    text += `Example ${index + 1}:\n\n`;
+                    text += `Input:\n${formatGridToString(pair.input)}\n`;
+                    text += `Output:\n${formatGridToString(pair.output)}\n\n`;
+                });
+                
+                text += "Below is a test input grid. Predict the corresponding output grid by applying the rule you found. Your final answer should just be the text output grid itself.\n\n";
+
+                task.test.forEach((pair) => {
+                    text += `Input:\n${formatGridToString(pair.input)}\n`;
+                });
+
+                return text;
+            }, [task, repo, set, filename]);
+            
+            if (!task) return null;
+
+            const handleCopy = () => {
+                navigator.clipboard.writeText(promptText).then(() => {
+                    setCopyText('Copied!');
+                    setTimeout(() => setCopyText('Copy'), 2000);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                    setCopyText('Error!');
+                     setTimeout(() => setCopyText('Copy'), 2000);
+                });
+            };
+
+            return (
+                <div className="bg-gray-800 p-4 rounded-lg shadow-lg relative">
+                    <button
+                        onClick={handleCopy}
+                        className={`absolute top-3 right-3 px-3 py-1 text-xs font-semibold rounded-md transition-colors ${copyText === 'Copied!' ? 'bg-green-600' : 'bg-gray-600 hover:bg-gray-500'} text-white`}
+                    >
+                        {copyText}
+                    </button>
+                    <pre className="text-sm text-gray-200 whitespace-pre-wrap break-words font-mono">
+                        <code>{promptText}</code>
+                    </pre>
+                </div>
+            )
+        };
+
+
         // --- Main App Component ---
 
         function PuzzleBrowser() {
@@ -90,6 +149,7 @@
 
             const [selectedRepo, setSelectedRepo] = useState('fchollet/ARC-AGI');
             const [selectedSet, setSelectedSet] = useState('training');
+            const [currentView, setCurrentView] = useState('visual'); // 'visual' or 'text'
             const [task, setTask] = useState(null);
             const [taskFiles, setTaskFiles] = useState([]);
             const [currentTaskName, setCurrentTaskName] = useState('');
@@ -169,41 +229,61 @@
                             </p>
                         </div>
 
-                        <div className="bg-gray-900/50 backdrop-blur-sm p-4 rounded-lg shadow-xl flex flex-wrap items-center justify-center gap-4 sticky top-4 z-10">
-                             <div className="flex items-center gap-2">
-                                <label htmlFor="repo-select" className="text-sm font-medium">Repository:</label>
-                                <select 
-                                    id="repo-select"
-                                    value={selectedRepo}
-                                    onChange={(e) => setSelectedRepo(e.target.value)}
-                                    className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                        <div className="bg-gray-900/50 backdrop-blur-sm p-4 rounded-lg shadow-xl flex flex-col items-center justify-center gap-4 sticky top-4 z-10">
+                            {/* --- Top Row: Selections --- */}
+                            <div className="flex flex-wrap items-center justify-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="repo-select" className="text-sm font-medium">Repository:</label>
+                                    <select 
+                                        id="repo-select"
+                                        value={selectedRepo}
+                                        onChange={(e) => setSelectedRepo(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="fchollet/ARC-AGI">ARC AGI-1</option>
+                                        <option value="arcprize/ARC-AGI-2">ARC AGI-2</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="set-select" className="text-sm font-medium">Set:</label>
+                                    <select 
+                                        id="set-select"
+                                        value={selectedSet}
+                                        onChange={(e) => setSelectedSet(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="training">Training</option>
+                                        <option value="evaluation">Evaluation</option>
+                                    </select>
+                                </div>
+                                
+                                <div className="h-8 border-l border-gray-600 hidden sm:block"></div>
+
+                                <button 
+                                    onClick={loadRandomPuzzle} 
+                                    disabled={isLoading || taskFiles.length === 0} 
+                                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition-transform transform hover:scale-105"
                                 >
-                                    <option value="fchollet/ARC-AGI">ARC AGI-1</option>
-                                    <option value="arcprize/ARC-AGI-2">ARC AGI-2</option>
-                                </select>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <label htmlFor="set-select" className="text-sm font-medium">Set:</label>
-                                <select 
-                                    id="set-select"
-                                    value={selectedSet}
-                                    onChange={(e) => setSelectedSet(e.target.value)}
-                                    className="bg-gray-700 text-white border border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                                >
-                                    <option value="training">Training</option>
-                                    <option value="evaluation">Evaluation</option>
-                                </select>
+                                    {isLoading ? 'Loading...' : 'Load Random Puzzle'}
+                                </button>
                             </div>
                             
-                            <div className="h-8 border-l border-gray-600 hidden sm:block"></div>
-
-                            <button 
-                                onClick={loadRandomPuzzle} 
-                                disabled={isLoading || taskFiles.length === 0} 
-                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition-transform transform hover:scale-105"
-                            >
-                                {isLoading ? 'Loading...' : 'Load Random Puzzle'}
-                            </button>
+                            {/* --- Bottom Row: View Tabs --- */}
+                            <div className="border-t border-gray-700 w-full my-2"></div>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => setCurrentView('visual')}
+                                    className={`px-4 py-1 text-sm font-medium rounded-md ${currentView === 'visual' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                >
+                                    Visual Browser
+                                </button>
+                                 <button 
+                                    onClick={() => setCurrentView('text')}
+                                    className={`px-4 py-1 text-sm font-medium rounded-md ${currentView === 'text' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                >
+                                    Text Prompt
+                                </button>
+                            </div>
                         </div>
                         
                         {error && (
@@ -219,7 +299,11 @@
                                     <p>Loading puzzles from {selectedRepo}/{selectedSet}...</p>
                                 </div>
                             )}
-                            {!isLoading && task && <TaskView task={task} />}
+                            {!isLoading && task && (
+                                currentView === 'visual' 
+                                ? <TaskView task={task} /> 
+                                : <TextPromptView task={task} repo={selectedRepo} set={selectedSet} filename={currentTaskName} />
+                            )}
                             {!isLoading && !task && !error && (
                                <div className="text-center text-gray-500 py-20">
                                     <p>Click "Load Random Puzzle" to start.</p>
